@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 class SessionManager:
-    def __init__(self, timeout_minutes=1):
+    def __init__(self, timeout_minutes=10):
         self.timeout_minutes = timeout_minutes
         self.last_activity = datetime.now()
         
