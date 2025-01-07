@@ -79,6 +79,21 @@ class ProfileWindow(BaseWindow):
             }
         """)
         
+        self.change_pwd_btn = QPushButton('修改密码')
+        self.change_pwd_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FFA500;
+                color: white;
+                border: none;
+                padding: 5px;
+                border-radius: 3px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #FF8C00;
+            }
+        """)
+        
         self.logout_btn = QPushButton('注销用户')
         self.logout_btn.setStyleSheet("""
             QPushButton {
@@ -110,6 +125,7 @@ class ProfileWindow(BaseWindow):
         """)
         
         button_layout.addWidget(self.edit_btn)
+        button_layout.addWidget(self.change_pwd_btn)
         button_layout.addWidget(self.logout_btn)
         button_layout.addWidget(self.back_btn)
         
@@ -119,6 +135,7 @@ class ProfileWindow(BaseWindow):
         self.edit_btn.clicked.connect(self.edit_profile)
         self.logout_btn.clicked.connect(self.logout_account)
         self.back_btn.clicked.connect(self.back_to_main)
+        self.change_pwd_btn.clicked.connect(self.change_password)
         
         self.setLayout(layout)
         self.setWindowTitle('个人信息')
@@ -187,3 +204,10 @@ class ProfileWindow(BaseWindow):
         # 更新所有显示的用户信息标签
         for field, label in self.info_labels.items():
             label.setText(str(self.user_info.get(field, ''))) 
+
+    def change_password(self):
+        """打开修改密码窗口"""
+        from .password_change_window import PasswordChangeWindow
+        self.pwd_window = PasswordChangeWindow(self.conn, self.user_info, self)
+        self.pwd_window.show()
+        self.hide() 
