@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QLabel, QPushButton, QVBoxLayout, QHBoxLayout, 
                             QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-                            QWidget)
+                            QWidget, QDialog, QLineEdit, QComboBox)
 from PyQt5.QtCore import Qt, QDateTime
 from PyQt5.QtGui import QTextOption
 from .base_window import BaseWindow
@@ -165,6 +165,7 @@ class AdminSystem(BaseWindow):
                 
                 edit_btn = QPushButton('编辑')
                 edit_btn.setFixedWidth(60)
+                edit_btn.clicked.connect(lambda checked, user_id=user[0]: self.edit_user(user_id))
                 
                 btn_widget = QWidget()
                 btn_layout = QHBoxLayout(btn_widget)
@@ -179,6 +180,80 @@ class AdminSystem(BaseWindow):
         except Exception as e:
             QMessageBox.critical(self, '错误', f'查询失败: {str(e)}')
 
+    def edit_user(self, user_id):
+        """编辑用户信息"""
+        try:
+            # 查询用户当前信息
+            self.cursor.execute("""
+                SELECT Phone, Dept, Position, Role
+                FROM Users 
+                WHERE Id = %s
+            """, (user_id,))
+            current_info = self.cursor.fetchone()
+            
+            # 创建编辑对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle('编辑用户信息')
+            layout = QVBoxLayout()
+            
+            # 创建输入框
+            phone_label = QLabel('电话:')
+            phone_input = QLineEdit(current_info[0])
+            dept_label = QLabel('部门:')
+            dept_input = QLineEdit(current_info[1])
+            position_label = QLabel('职位:')
+            position_input = QLineEdit(current_info[2])
+            role_label = QLabel('角色:')
+            role_combo = QComboBox()
+            role_combo.addItems(['User', 'Admin'])
+            role_combo.setCurrentText(current_info[3])
+            
+            # 添加到布局
+            layout.addWidget(phone_label)
+            layout.addWidget(phone_input)
+            layout.addWidget(dept_label)
+            layout.addWidget(dept_input)
+            layout.addWidget(position_label)
+            layout.addWidget(position_input)
+            layout.addWidget(role_label)
+            layout.addWidget(role_combo)
+            
+            # 添加确认和取消按钮
+            buttons = QHBoxLayout()
+            confirm_btn = QPushButton('确认')
+            cancel_btn = QPushButton('取消')
+            buttons.addWidget(confirm_btn)
+            buttons.addWidget(cancel_btn)
+            layout.addLayout(buttons)
+            
+            dialog.setLayout(layout)
+            
+            # 连接按钮信号
+            def on_confirm():
+                try:
+                    # 更新用户信息
+                    self.cursor.execute("""
+                        UPDATE Users 
+                        SET Phone = %s, Dept = %s, Position = %s, Role = %s
+                        WHERE Id = %s
+                    """, (phone_input.text(), dept_input.text(), 
+                          position_input.text(), role_combo.currentText(), user_id))
+                    self.conn.commit()
+                    QMessageBox.information(dialog, '成功', '用户信息已更新！')
+                    dialog.accept()
+                    self.show_users()  # 刷新用户列表
+                except Exception as e:
+                    self.conn.rollback()
+                    QMessageBox.critical(dialog, '错误', f'更新失败: {str(e)}')
+            
+            confirm_btn.clicked.connect(on_confirm)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'编辑用户失败: {str(e)}')
+
     def show_rooms(self):
         """显示会议室列表"""
         try:
@@ -188,7 +263,7 @@ class AdminSystem(BaseWindow):
             
             self.table.clear()
             self.table.setRowCount(0)
-            self.table.setColumnCount(5)  # 改为5列，添加状态列
+            self.table.setColumnCount(5)
             self.table.setHorizontalHeaderLabels([
                 '会议室名称', '可容纳人数', '位置', '设备列表', '当前状态'
             ])
@@ -371,7 +446,15 @@ class AdminSystem(BaseWindow):
         try:
             status = '已审核' if is_approved else '已取消'
             
-            # 首先更新预订状态
+            # 首先获取预订的结束时间
+            self.cursor.execute("""
+                SELECT EndTime, CId 
+                FROM MeetingRoomReservation 
+                WHERE ReservationId = %s
+            """, (reservation_id,))
+            end_time, room_id = self.cursor.fetchone()
+            
+            # 更新预订状态
             self.cursor.execute("""
                 UPDATE MeetingRoomReservation 
                 SET ReservationStatus = %s
@@ -380,20 +463,20 @@ class AdminSystem(BaseWindow):
             
             # 如果审核通过
             if is_approved:
-                # 更新会议室状态为"使用中"（如果当前时间在预订时间范围内）
-                # 或保持原状（如果当前时间不在预订时间范围内）
+                # 更新会议室状态
                 self.cursor.execute("""
                     UPDATE MeetingRooms mr
                     JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
                     SET mr.MeetingRoomStatus = 
                         CASE 
                             WHEN NOW() BETWEEN mrr.StartTime AND mrr.EndTime THEN '使用中'
-                            ELSE mr.MeetingRoomStatus
+                            WHEN NOW() < mrr.StartTime THEN '已预订'
+                            WHEN NOW() > mrr.EndTime THEN '待维护'
                         END
                     WHERE mrr.ReservationId = %s
                 """, (reservation_id,))
                 
-                # 创建一个触发器或事件，在会议结束时将状态更新为"待维护"
+                # 创建维护记录
                 self.cursor.execute("""
                     INSERT INTO MaintenanceRecords (CId, MDate, MStatus, RContent, MStaff)
                     SELECT 
@@ -407,14 +490,16 @@ class AdminSystem(BaseWindow):
                     WHERE mrr.ReservationId = %s
                 """, (reservation_id,))
                 
-                # 创建事件以在会议结束时更新会议室状态
+                # 创建定时任务来更新会议室状态（使用直接的时间值）
+                event_name = f'update_room_status_{reservation_id}'
                 self.cursor.execute("""
-                    UPDATE MeetingRooms mr
-                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
-                    SET mr.MeetingRoomStatus = '待维护'
-                    WHERE mrr.ReservationId = %s
-                    AND mrr.EndTime <= NOW()
-                """, (reservation_id,))
+                    CREATE EVENT IF NOT EXISTS """ + event_name + """
+                    ON SCHEDULE AT %s
+                    DO
+                    UPDATE MeetingRooms 
+                    SET MeetingRoomStatus = '待维护'
+                    WHERE CId = %s;
+                """, (end_time, room_id))
                 
             # 如果取消预订
             else:
@@ -423,21 +508,31 @@ class AdminSystem(BaseWindow):
                     JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
                     SET mr.MeetingRoomStatus = 
                         CASE 
-                            WHEN NOT EXISTS (
+                            WHEN EXISTS (
                                 SELECT 1 
                                 FROM MeetingRoomReservation mrr2 
                                 WHERE mrr2.CId = mr.CId 
                                 AND mrr2.ReservationStatus = '已审核'
                                 AND NOW() BETWEEN mrr2.StartTime AND mrr2.EndTime
-                            ) THEN '空闲'
-                            ELSE mr.MeetingRoomStatus
+                            ) THEN '使用中'
+                            WHEN EXISTS (
+                                SELECT 1 
+                                FROM MeetingRoomReservation mrr2 
+                                WHERE mrr2.CId = mr.CId 
+                                AND mrr2.ReservationStatus = '已审核'
+                                AND mrr2.StartTime > NOW()
+                            ) THEN '已预订'
+                            ELSE '空闲'
                         END
                     WHERE mrr.ReservationId = %s
                 """, (reservation_id,))
             
             self.conn.commit()
             QMessageBox.information(self, '成功', f'预订已{status}！')
+            
+            # 刷新显示
             self.show_pending_bookings()
+            self.show_rooms()  # 同步更新会议室列表显示
             
         except Exception as e:
             self.conn.rollback()
