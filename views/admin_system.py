@@ -1,8 +1,7 @@
 from PyQt5.QtWidgets import (QLabel, QPushButton, QVBoxLayout, QHBoxLayout, 
                             QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-                            QWidget, QDialog, QLineEdit, QComboBox)
-from PyQt5.QtCore import Qt, QDateTime
-from PyQt5.QtGui import QTextOption
+                            QWidget, QDialog, QLineEdit, QComboBox, QTextEdit)
+from PyQt5.QtCore import Qt
 from .base_window import BaseWindow
 
 class AdminSystem(BaseWindow):
@@ -64,7 +63,7 @@ class AdminSystem(BaseWindow):
         
         self.setLayout(layout)
         self.setWindowTitle('管理系统')
-        self.setFixedSize(1000, 600)
+        self.setFixedSize(900, 600)
 
     def setup_table_display(self):
         """设置表格的通用显示属性"""
@@ -554,12 +553,15 @@ class AdminSystem(BaseWindow):
                 '维护状态', '维护内容', '操作'
             ])
             
-            # 查询维护记录
+            # 启用自动换行
+            self.table.setWordWrap(True)
+            
+            # 修改SQL查询，使用DATE_FORMAT来格式化日期
             self.cursor.execute("""
                 SELECT 
                     mr.RId,
                     m.Name as RoomName,
-                    mr.MDate,
+                    DATE_FORMAT(mr.MDate, '%Y-%m-%d %H:%i') as MDate,
                     mr.MStaff,
                     mr.MStatus,
                     mr.RContent
@@ -575,7 +577,10 @@ class AdminSystem(BaseWindow):
                 self.table.insertRow(row_num)
                 for col_num, value in enumerate(record):
                     item = QTableWidgetItem(str(value))
-                    item.setTextAlignment(Qt.AlignCenter)
+                    if col_num == 5:  # 维护内容列
+                        item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    else:
+                        item.setTextAlignment(Qt.AlignCenter)
                     if col_num == 4:  # 维护状态列
                         if value == '已维护':
                             item.setForeground(Qt.green)
@@ -585,25 +590,51 @@ class AdminSystem(BaseWindow):
                             item.setForeground(Qt.red)
                     self.table.setItem(row_num, col_num, item)
                 
-                # 添加更新按钮
+                # 创建按钮容器
+                btn_widget = QWidget()
+                btn_layout = QHBoxLayout(btn_widget)
+                
+                # 添加更新状态按钮
                 update_btn = QPushButton('更新状态')
                 update_btn.setFixedWidth(80)
                 update_btn.clicked.connect(
                     lambda checked, rid=record[0]: self.update_maintenance_status(rid))
                 
-                btn_widget = QWidget()
-                btn_layout = QHBoxLayout(btn_widget)
+                # 添加编辑内容按钮
+                edit_content_btn = QPushButton('编辑内容')
+                edit_content_btn.setFixedWidth(80)
+                edit_content_btn.clicked.connect(
+                    lambda checked, rid=record[0]: self.edit_maintenance_content(rid))
+                
                 btn_layout.addWidget(update_btn)
+                btn_layout.addWidget(edit_content_btn)
                 btn_layout.setAlignment(Qt.AlignCenter)
                 btn_layout.setContentsMargins(0, 0, 0, 0)
+                btn_layout.setSpacing(5)  # 设置按钮之间的间距
                 
                 self.table.setCellWidget(row_num, 6, btn_widget)
             
-            self.setup_table_display()
+            # 设置列宽
+            header = self.table.horizontalHeader()
+            
+            # 设置固定宽度的列
+            self.table.setColumnWidth(5, 180)  # 维护内容列固定宽度
+            self.table.setColumnWidth(6, 180)  # 操作列固定宽度（足够容纳两个按钮加间距）
+            
+            # 其他列自动拉伸
+            for i in range(5):  # 前5列自动拉伸
+                header.setSectionResizeMode(i, QHeaderView.Stretch)
+            
+            # 固定宽度的列
+            header.setSectionResizeMode(5, QHeaderView.Fixed)  # 维护内容列
+            header.setSectionResizeMode(6, QHeaderView.Fixed)  # 操作列
+            
+            # 自动调整行高以适应内容
+            for row in range(self.table.rowCount()):
+                self.table.resizeRowToContents(row)
                     
         except Exception as e:
             QMessageBox.critical(self, '错误', f'查询失败: {str(e)}')
-
 
     def show_room_edit(self):
         """打开会议室编辑界面"""
@@ -712,3 +743,64 @@ class AdminSystem(BaseWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, '错误', f'刷新数据失败: {str(e)}') 
+
+    def edit_maintenance_content(self, record_id):
+        """编辑维护内容"""
+        try:
+            # 获取当前维护内容
+            self.cursor.execute("""
+                SELECT RContent FROM MaintenanceRecords WHERE RId = %s
+            """, (record_id,))
+            current_content = self.cursor.fetchone()[0]
+            
+            # 创建编辑对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle('编辑维护内容')
+            layout = QVBoxLayout()
+            
+            # 创建多行文本输入框
+            content_label = QLabel('维护内容:')
+            content_input = QTextEdit()
+            content_input.setText(current_content)
+            content_input.setMinimumHeight(100)
+            
+            # 添加到布局
+            layout.addWidget(content_label)
+            layout.addWidget(content_input)
+            
+            # 添加按钮
+            buttons = QHBoxLayout()
+            confirm_btn = QPushButton('确认')
+            cancel_btn = QPushButton('取消')
+            buttons.addWidget(confirm_btn)
+            buttons.addWidget(cancel_btn)
+            layout.addLayout(buttons)
+            
+            dialog.setLayout(layout)
+            
+            # 连接按钮信号
+            def on_confirm():
+                try:
+                    # 更新维护内容
+                    self.cursor.execute("""
+                        UPDATE MaintenanceRecords 
+                        SET RContent = %s
+                        WHERE RId = %s
+                    """, (content_input.toPlainText(), record_id))
+                    self.conn.commit()
+                    QMessageBox.information(dialog, '成功', '维护内容已更新！')
+                    dialog.accept()
+                    self.show_maintenance()  # 刷新维护记录列表
+                except Exception as e:
+                    self.conn.rollback()
+                    QMessageBox.critical(dialog, '错误', f'更新失败: {str(e)}')
+            
+            confirm_btn.clicked.connect(on_confirm)
+            cancel_btn.clicked.connect(dialog.reject)
+            
+            # 设置对话框大小
+            dialog.setMinimumWidth(400)
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'编辑维护内容失败: {str(e)}') 
