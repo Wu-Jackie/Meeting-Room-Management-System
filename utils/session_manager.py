@@ -13,4 +13,4 @@ class SessionManager:
         """检查会话是否过期"""
         current_time = datetime.now()
         time_difference = current_time - self.last_activity
-        return time_difference > timedelta(minutes=self.timeout_minutes) 
+        return time_difference > timedelta(minutes=self.timeout_minutes)

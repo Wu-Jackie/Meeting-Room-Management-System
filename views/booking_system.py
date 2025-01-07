@@ -121,26 +121,16 @@ class BookingSystem(BaseWindow):
     def show_all_rooms(self):
         """显示所有会议室"""
         try:
-            self.reset_table_for_rooms()  # 重置表格
+            self.reset_table_for_rooms()
             self.status_label.setText("所有会议室信息如下：")
             
-            # 查询所有会议室及其当前预订状态
+            # 修改查询以直接使用 MeetingRoomStatus 字段
             self.cursor.execute("""
                 SELECT 
                     mr.Name, 
                     mr.Capacity, 
                     mr.Location,
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 
-                            FROM MeetingRoomReservation mrr 
-                            WHERE mrr.CId = mr.CId 
-                            AND mrr.ReservationStatus = '已审核'
-                            AND mrr.StartTime <= NOW() 
-                            AND mrr.EndTime >= NOW()
-                        ) THEN '使用中'
-                        ELSE '空闲'
-                    END as Status
+                    mr.MeetingRoomStatus
                 FROM MeetingRooms mr
                 ORDER BY mr.Name
             """)
@@ -174,21 +164,11 @@ class BookingSystem(BaseWindow):
             self.reset_table_for_available_rooms()
             self.status_label.setText("当前空闲会议室如下：")
             
-            # 修改查询语句，排除所有有待审核或已审核预订的会议室
+            # 修改查询语句，使用 MeetingRoomStatus 字段
             self.cursor.execute("""
                 SELECT DISTINCT mr.CId, mr.Name, mr.Capacity, mr.Location 
                 FROM MeetingRooms mr
-                WHERE NOT EXISTS (
-                    SELECT 1 
-                    FROM MeetingRoomReservation mrr 
-                    WHERE mrr.CId = mr.CId 
-                    AND mrr.ReservationStatus IN ('待审核', '已审核')
-                    AND (
-                        (mrr.StartTime <= NOW() AND mrr.EndTime >= NOW())  -- 当前正在使用
-                        OR 
-                        (mrr.StartTime > NOW())  -- 未来已预订
-                    )
-                )
+                WHERE mr.MeetingRoomStatus = '空闲'
                 ORDER BY mr.Name
             """)
             
@@ -227,7 +207,7 @@ class BookingSystem(BaseWindow):
     def book_room(self, row):
         """打开预订详情窗口"""
         from .booking_detail_window import BookingDetailWindow
-        room_info = self.room_data[row]  # (CId, Name, Capacity, Location)
+        room_info = self.room_data[row]
         self.booking_detail = BookingDetailWindow(self.conn, self.user_info, room_info, self)
         self.booking_detail.show()
 
@@ -288,16 +268,18 @@ class BookingSystem(BaseWindow):
     def cancel_booking(self, row):
         """撤销预订"""
         try:
-            booking_id = self.booking_data[row][0]  # 获取预订ID
-            room_name = self.booking_data[row][1]  # 获取会议室名称
+            booking_id = self.booking_data[row][0]
+            room_name = self.booking_data[row][1]
             
-            # 确认是否撤销
             reply = QMessageBox.question(self, '确认撤销', 
                                        f'确定要撤销 {room_name} 的预订吗？',
                                        QMessageBox.Yes | QMessageBox.No,
                                        QMessageBox.No)
             
             if reply == QMessageBox.Yes:
+                # 开始事务
+                self.cursor.execute("START TRANSACTION")
+                
                 # 更新预订状态为"已取消"
                 self.cursor.execute("""
                     UPDATE MeetingRoomReservation 
@@ -305,11 +287,26 @@ class BookingSystem(BaseWindow):
                     WHERE ReservationId = %s
                 """, (booking_id,))
                 
+                # 更新会议室状态
+                self.cursor.execute("""
+                    UPDATE MeetingRooms mr
+                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
+                    SET mr.MeetingRoomStatus = 
+                        CASE 
+                            WHEN NOT EXISTS (
+                                SELECT 1 
+                                FROM MeetingRoomReservation mrr2 
+                                WHERE mrr2.CId = mr.CId 
+                                AND mrr2.ReservationStatus = '已审核'
+                                AND NOW() BETWEEN mrr2.StartTime AND mrr2.EndTime
+                            ) THEN '空闲'
+                            ELSE '使用中'
+                        END
+                    WHERE mrr.ReservationId = %s
+                """, (booking_id,))
+                
                 self.conn.commit()
-                
                 QMessageBox.information(self, '成功', '预订已成功撤销！')
-                
-                # 刷新预订列表
                 self.show_my_bookings()
                 
         except Exception as e:
