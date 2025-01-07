@@ -193,22 +193,14 @@ class AdminSystem(BaseWindow):
                 '会议室名称', '可容纳人数', '位置', '设备列表', '当前状态'
             ])
             
-            # 修改查询以获取会议室当前状态
+            # 修改查询以使用 MeetingRoomStatus 字段
             self.cursor.execute("""
                 SELECT 
                     mr.Name, 
                     mr.Capacity, 
                     mr.Location,
                     GROUP_CONCAT(d.DName SEPARATOR '、') as Devices,
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 FROM MeetingRoomReservation mrr 
-                            WHERE mrr.CId = mr.CId 
-                            AND mrr.ReservationStatus = '已审核'
-                            AND NOW() BETWEEN mrr.StartTime AND mrr.EndTime
-                        ) THEN '使用中'
-                        ELSE '空闲'
-                    END as Status
+                    mr.MeetingRoomStatus as Status
                 FROM MeetingRooms mr
                 LEFT JOIN MeetingRoomDevices mrd ON mr.CId = mrd.CId
                 LEFT JOIN Devices d ON mrd.DId = d.DId
@@ -328,9 +320,9 @@ class AdminSystem(BaseWindow):
                     mrr.ReservationId,
                     mr.Name as RoomName,
                     u.Name as UserName,
-                    mrr.StartTime,
-                    mrr.EndTime,
-                    mrr.ReservationTime,
+                    DATE_FORMAT(mrr.StartTime, '%Y-%m-%d %H:%i') as StartTime,
+                    DATE_FORMAT(mrr.EndTime, '%Y-%m-%d %H:%i') as EndTime,
+                    DATE_FORMAT(mrr.ReservationTime, '%Y-%m-%d %H:%i') as ReservationTime,
                     mrr.ReservationStatus
                 FROM MeetingRoomReservation mrr
                 JOIN MeetingRooms mr ON mrr.CId = mr.CId
@@ -378,18 +370,45 @@ class AdminSystem(BaseWindow):
         """处理预订审核"""
         try:
             status = '已审核' if is_approved else '已取消'
+            
+            # 首先更新预订状态
             self.cursor.execute("""
                 UPDATE MeetingRoomReservation 
                 SET ReservationStatus = %s
                 WHERE ReservationId = %s
             """, (status, reservation_id))
             
+            # 如果审核通过，更新会议室状态为"使用中"
+            if is_approved:
+                self.cursor.execute("""
+                    UPDATE MeetingRooms mr
+                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
+                    SET mr.MeetingRoomStatus = '使用中'
+                    WHERE mrr.ReservationId = %s
+                    AND NOW() BETWEEN mrr.StartTime AND mrr.EndTime
+                """, (reservation_id,))
+            
+            # 如果取消预订，检查是否还有其他有效预订，如果没有则将状态改为"空闲"
+            else:
+                self.cursor.execute("""
+                    UPDATE MeetingRooms mr
+                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
+                    SET mr.MeetingRoomStatus = 
+                        CASE 
+                            WHEN NOT EXISTS (
+                                SELECT 1 
+                                FROM MeetingRoomReservation mrr2 
+                                WHERE mrr2.CId = mr.CId 
+                                AND mrr2.ReservationStatus = '已审核'
+                                AND NOW() BETWEEN mrr2.StartTime AND mrr2.EndTime
+                            ) THEN '空闲'
+                            ELSE mr.MeetingRoomStatus
+                        END
+                    WHERE mrr.ReservationId = %s
+                """, (reservation_id,))
+            
             self.conn.commit()
-            
-            QMessageBox.information(self, '成功', 
-                f'预订已{status}！')
-            
-            # 刷新列表
+            QMessageBox.information(self, '成功', f'预订已{status}！')
             self.show_pending_bookings()
             
         except Exception as e:
