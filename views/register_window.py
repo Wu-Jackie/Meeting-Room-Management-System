@@ -37,6 +37,11 @@ class RegisterWindow(QWidget):
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         
+        # 添加重复密码输入框
+        self.confirm_password_label = QLabel('确认密码:')
+        self.confirm_password_input = QLineEdit()
+        self.confirm_password_input.setEchoMode(QLineEdit.Password)
+        
         self.gender_label = QLabel('性别:')
         self.gender_combo = QComboBox()
         self.gender_combo.addItems([gender.value for gender in Gender])
@@ -54,10 +59,6 @@ class RegisterWindow(QWidget):
         self.position_label = QLabel('职位:')
         self.position_input = QLineEdit()
         
-        self.role_label = QLabel('角色:')
-        self.role_combo = QComboBox()
-        self.role_combo.addItems([role.value for role in Role])
-        
         self.submit_button = QPushButton('提交注册')
         
         # 创建布局
@@ -68,11 +69,11 @@ class RegisterWindow(QWidget):
             (self.id_label, self.id_input),
             (self.name_label, self.name_input),
             (self.password_label, self.password_input),
+            (self.confirm_password_label, self.confirm_password_input),
             (self.gender_label, self.gender_combo),
             (self.phone_label, self.phone_input),
             (self.dept_label, self.dept_input),
-            (self.position_label, self.position_input),
-            (self.role_label, self.role_combo)
+            (self.position_label, self.position_input)
         ]:
             hbox = QHBoxLayout()
             hbox.addWidget(label)
@@ -104,7 +105,6 @@ class RegisterWindow(QWidget):
         phone = self.phone_input.text().strip()
         dept = self.dept_input.text()
         position = self.position_input.text()
-        role = self.role_combo.currentText()
         
         # 验证输入
         if not all([user_id, name, password]):
@@ -127,6 +127,9 @@ class RegisterWindow(QWidget):
             QMessageBox.warning(self, '警告', '请输入有效的手机号！')
             return
             
+        # 设置默认角色为普通用户
+        role = Role.USER.value
+        
         try:
             # 检查用户ID是否已存在
             self.cursor.execute("SELECT Id FROM Users WHERE Id = %s", (user_id,))
@@ -138,6 +141,12 @@ class RegisterWindow(QWidget):
             self.cursor.execute("SELECT MAX(No) FROM Users")
             max_no = self.cursor.fetchone()[0]
             next_no = 1 if max_no is None else max_no + 1
+            
+            # 验证两次输入的密码是否一致
+            confirm_password = self.confirm_password_input.text()
+            if password != confirm_password:
+                QMessageBox.warning(self, '错误', '两次输入的密码不一致！')
+                return
             
             # 注册新用户
             hashed_password = hash_password(password)
