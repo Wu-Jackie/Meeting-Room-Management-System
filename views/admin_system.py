@@ -378,17 +378,45 @@ class AdminSystem(BaseWindow):
                 WHERE ReservationId = %s
             """, (status, reservation_id))
             
-            # 如果审核通过，更新会议室状态为"使用中"
+            # 如果审核通过
             if is_approved:
+                # 更新会议室状态为"使用中"（如果当前时间在预订时间范围内）
+                # 或保持原状（如果当前时间不在预订时间范围内）
                 self.cursor.execute("""
                     UPDATE MeetingRooms mr
                     JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
-                    SET mr.MeetingRoomStatus = '使用中'
+                    SET mr.MeetingRoomStatus = 
+                        CASE 
+                            WHEN NOW() BETWEEN mrr.StartTime AND mrr.EndTime THEN '使用中'
+                            ELSE mr.MeetingRoomStatus
+                        END
                     WHERE mrr.ReservationId = %s
-                    AND NOW() BETWEEN mrr.StartTime AND mrr.EndTime
                 """, (reservation_id,))
-            
-            # 如果取消预订，检查是否还有其他有效预订，如果没有则将状态改为"空闲"
+                
+                # 创建一个触发器或事件，在会议结束时将状态更新为"待维护"
+                self.cursor.execute("""
+                    INSERT INTO MaintenanceRecords (CId, MDate, MStatus, RContent, MStaff)
+                    SELECT 
+                        mr.CId,
+                        mrr.EndTime,
+                        '未维护',
+                        '会议结束后例行检查',
+                        '待分配'
+                    FROM MeetingRooms mr
+                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
+                    WHERE mrr.ReservationId = %s
+                """, (reservation_id,))
+                
+                # 创建事件以在会议结束时更新会议室状态
+                self.cursor.execute("""
+                    UPDATE MeetingRooms mr
+                    JOIN MeetingRoomReservation mrr ON mr.CId = mrr.CId
+                    SET mr.MeetingRoomStatus = '待维护'
+                    WHERE mrr.ReservationId = %s
+                    AND mrr.EndTime <= NOW()
+                """, (reservation_id,))
+                
+            # 如果取消预订
             else:
                 self.cursor.execute("""
                     UPDATE MeetingRooms mr
@@ -494,9 +522,9 @@ class AdminSystem(BaseWindow):
         try:
             # 获取当前状态
             self.cursor.execute("""
-                SELECT MStatus FROM MaintenanceRecords WHERE RId = %s
+                SELECT MStatus, CId FROM MaintenanceRecords WHERE RId = %s
             """, (record_id,))
-            current_status = self.cursor.fetchone()[0]
+            current_status, room_id = self.cursor.fetchone()
             
             # 确定下一个状态
             status_flow = {
@@ -507,12 +535,46 @@ class AdminSystem(BaseWindow):
             
             new_status = status_flow[current_status]
             
-            # 更新状态
+            # 更新维护记录状态
             self.cursor.execute("""
                 UPDATE MaintenanceRecords 
-                SET MStatus = %s
+                SET MStatus = %s,
+                    MStaff = CASE 
+                        WHEN %s = '已维护' THEN %s
+                        ELSE MStaff
+                    END
                 WHERE RId = %s
-            """, (new_status, record_id))
+            """, (new_status, new_status, self.user_info['Name'], record_id))
+            
+            # 如果状态更新为"已维护"，更新会议室状态
+            if new_status == '已维护':
+                # 首先检查是否有当前或未来的已审核预订
+                self.cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM MeetingRoomReservation 
+                    WHERE CId = %s 
+                    AND ReservationStatus = '已审核'
+                    AND EndTime > NOW()
+                """, (room_id,))
+                
+                future_bookings = self.cursor.fetchone()[0]
+                
+                # 更新会议室状态
+                self.cursor.execute("""
+                    UPDATE MeetingRooms 
+                    SET MeetingRoomStatus = CASE
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM MeetingRoomReservation 
+                            WHERE CId = %s 
+                            AND ReservationStatus = '已审核'
+                            AND NOW() BETWEEN StartTime AND EndTime
+                        ) THEN '使用中'
+                        WHEN %s > 0 THEN '已预订'
+                        ELSE '空闲'
+                    END
+                    WHERE CId = %s
+                """, (room_id, future_bookings, room_id))
             
             self.conn.commit()
             
@@ -524,7 +586,7 @@ class AdminSystem(BaseWindow):
             
         except Exception as e:
             self.conn.rollback()
-            QMessageBox.critical(self, '错误', f'更新失败: {str(e)}') 
+            QMessageBox.critical(self, '错误', f'更新失败: {str(e)}')
 
     def show_device_edit(self):
         """打开设备编辑界面"""
