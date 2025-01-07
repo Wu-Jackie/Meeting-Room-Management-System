@@ -1,7 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QPushButton, 
                             QVBoxLayout, QHBoxLayout, QMessageBox, QComboBox,
                             QDesktopWidget)
-from PyQt5.QtCore import Qt
 from enum import Enum
 from config import hash_password
 from PyQt5.QtGui import QRegExpValidator

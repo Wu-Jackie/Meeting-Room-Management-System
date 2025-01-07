@@ -1,6 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QLineEdit, QPushButton,
                             QVBoxLayout, QHBoxLayout, QMessageBox, QDesktopWidget)
-from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QKeyEvent
 import os
 from config import hash_password

@@ -106,12 +106,12 @@ class BookingDetailWindow(BaseWindow):
                 )
             """, (
                 self.room_info[0],
-                start_time.toString('yyyy-MM-dd HH:mm:ss'),
-                start_time.toString('yyyy-MM-dd HH:mm:ss'),
-                end_time.toString('yyyy-MM-dd HH:mm:ss'),
-                end_time.toString('yyyy-MM-dd HH:mm:ss'),
-                start_time.toString('yyyy-MM-dd HH:mm:ss'),
-                end_time.toString('yyyy-MM-dd HH:mm:ss')
+                start_time.toString('yyyy-MM-dd HH:mm'),
+                start_time.toString('yyyy-MM-dd HH:mm'),
+                end_time.toString('yyyy-MM-dd HH:mm'),
+                end_time.toString('yyyy-MM-dd HH:mm'),
+                start_time.toString('yyyy-MM-dd HH:mm'),
+                end_time.toString('yyyy-MM-dd HH:mm')
             ))
             
             if self.cursor.fetchone()[0] > 0:
@@ -126,8 +126,8 @@ class BookingDetailWindow(BaseWindow):
             """, (
                 self.user_info['No'],
                 self.room_info[0],
-                start_time.toString('yyyy-MM-dd HH:mm:ss'),
-                end_time.toString('yyyy-MM-dd HH:mm:ss')
+                start_time.toString('yyyy-MM-dd HH:mm'),
+                end_time.toString('yyyy-MM-dd HH:mm')
             ))
             
             self.conn.commit()

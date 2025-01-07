@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QLabel, QPushButton, QVBoxLayout, QHBoxLayout, 
                             QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
                             QWidget)
-from PyQt5.QtCore import Qt, QDateTime
+from PyQt5.QtCore import Qt
 from .base_window import BaseWindow
 
 class BookingSystem(BaseWindow):
@@ -217,14 +217,14 @@ class BookingSystem(BaseWindow):
             self.reset_table_for_bookings()  # 重置表格
             self.status_label.setText("您的预订记录如下：")
             
-            # 查询用户的预订记录
+            # 修改SQL查询，使用DATE_FORMAT来格式化所有时间字段
             self.cursor.execute("""
                 SELECT 
                     mrr.ReservationId,
                     mr.Name, 
-                    mrr.ReservationTime,
-                    mrr.StartTime,
-                    mrr.EndTime,
+                    DATE_FORMAT(mrr.ReservationTime, '%Y-%m-%d %H:%i') as ReservationTime,
+                    DATE_FORMAT(mrr.StartTime, '%Y-%m-%d %H:%i') as StartTime,
+                    DATE_FORMAT(mrr.EndTime, '%Y-%m-%d %H:%i') as EndTime,
                     mrr.ReservationStatus
                 FROM MeetingRoomReservation mrr
                 JOIN MeetingRooms mr ON mrr.CId = mr.CId
