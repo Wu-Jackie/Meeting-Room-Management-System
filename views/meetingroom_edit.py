@@ -116,8 +116,8 @@ class MeetingRoomEdit(QWidget):
                 return
                 
             self.cursor.execute("""
-                INSERT INTO MeetingRooms (Name, Capacity, Location)
-                VALUES (%s, %s, %s)
+                INSERT INTO MeetingRooms (Name, Capacity, Location, MeetingRoomStatus)
+                VALUES (%s, %s, %s, '空闲')
             """, (name, int(capacity), location))
             
             self.conn.commit()

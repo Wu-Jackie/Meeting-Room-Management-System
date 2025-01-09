@@ -52,6 +52,7 @@ class AdminSystem(BaseWindow):
         # 创建表格
         self.table = QTableWidget()
         layout.addWidget(self.table)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         
         # 连接信号
         self.users_btn.clicked.connect(self.show_users)
