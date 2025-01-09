@@ -145,7 +145,7 @@ class BookingSystem(BaseWindow):
                     item = QTableWidgetItem(str(value))
                     # 设置状态列的颜色
                     if col_num == 3:  # 状态列
-                        if value == '使用中' or value == '已预订':
+                        if value == '使用中' or value == '已预订' or value == '待维护' or value == '已维修':
                             item.setForeground(Qt.red)
                         else:
                             item.setForeground(Qt.green)

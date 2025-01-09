@@ -135,9 +135,11 @@ class MeetingRoomEdit(QWidget):
 
     def edit_room(self, room_id):
         """编辑会议室"""
-        # 找到对应的行
         for row in range(self.room_table.rowCount()):
             if self.room_table.item(row, 0).text() == room_id:
+                # 保存原始名称
+                self.original_room_name = room_id
+                
                 # 使前三列可编辑
                 for col in range(3):
                     current_item = self.room_table.item(row, col)
@@ -165,26 +167,24 @@ class MeetingRoomEdit(QWidget):
     def confirm_edit(self, row):
         """确认编辑会议室"""
         try:
-            name = self.room_table.item(row, 0).text().strip()
+            # 获取编辑后的新值
+            new_name = self.room_table.item(row, 0).text().strip()
             capacity = self.room_table.item(row, 1).text().strip()
             location = self.room_table.item(row, 2).text().strip()
             
-            if not all([name, capacity, location]):
+            if not all([new_name, capacity, location]):
                 QMessageBox.warning(self, '警告', '请填写所有字段')
                 return
                 
             if not capacity.isdigit():
                 QMessageBox.warning(self, '警告', '容纳人数必须为数字')
                 return
-
-            # 获取原始会议室名称（作为WHERE条件）
-            original_name = name  # 因为我们用name作为标识符
                 
             self.cursor.execute("""
                 UPDATE MeetingRooms 
                 SET Name = %s, Capacity = %s, Location = %s
                 WHERE Name = %s
-            """, (name, int(capacity), location, original_name))
+            """, (new_name, int(capacity), location, self.original_room_name))
             
             self.conn.commit()
             QMessageBox.information(self, '成功', '更新会议室成功')
