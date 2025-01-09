@@ -194,19 +194,31 @@ class MeetingRoomEdit(QWidget):
             self.conn.rollback()
             QMessageBox.critical(self, '错误', f'更新会议室失败: {str(e)}')
 
-    def delete_room(self, room_id):
+    def delete_room(self, room_name):
         """删除会议室"""
         try:
             reply = QMessageBox.question(self, '确认', 
-                                       '确定要删除这个会议室吗？',
+                                       '确定要删除这个会议室吗？\n注意：这将同时删除该会议室的所有维护记录！',
                                        QMessageBox.Yes | QMessageBox.No)
             
             if reply == QMessageBox.Yes:
-                self.cursor.execute("DELETE FROM MeetingRoomDevices WHERE CId = %s", (room_id,))
-                self.cursor.execute("DELETE FROM MeetingRooms WHERE CId = %s", (room_id,))
+                # 先获取会议室的CId
+                self.cursor.execute("SELECT CId FROM MeetingRooms WHERE Name = %s", (room_name,))
+                result = self.cursor.fetchone()
+                if not result:
+                    QMessageBox.warning(self, '警告', '未找到该会议室')
+                    return
+                    
+                cid = result[0]
+                
+                # 按顺序删除相关记录
+                self.cursor.execute("DELETE FROM MaintenanceRecords WHERE CId = %s", (cid,))
+                self.cursor.execute("DELETE FROM MeetingRoomReservation WHERE CId = %s", (cid,))
+                self.cursor.execute("DELETE FROM MeetingRoomDevices WHERE CId = %s", (cid,))
+                self.cursor.execute("DELETE FROM MeetingRooms WHERE CId = %s", (cid,))
                 self.conn.commit()
                 
-                QMessageBox.information(self, '成功', '删除会议室成功')
+                QMessageBox.information(self, '成功', '删除会议室及其相关记录成功')
                 self.load_rooms()
                 
         except Exception as e:
