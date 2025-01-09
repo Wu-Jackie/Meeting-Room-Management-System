@@ -48,6 +48,7 @@ class DeviceEdit(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)  # 增加会议室和操作列
         self.table.setHorizontalHeaderLabels(['设备ID', '设备名称', '设备类型', '设备状态', '所属会议室', '操作'])
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.table)
         
         # 返回按钮

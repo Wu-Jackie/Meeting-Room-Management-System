@@ -50,6 +50,7 @@ class BookingSystem(BaseWindow):
         self.table = QTableWidget()
         self.table.setColumnCount(4)  # 增加一列用于放置预订按钮
         self.table.setHorizontalHeaderLabels(['会议室名称', '可容纳人数', '位置', '操作'])
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         
         # 设置表格列宽
         header = self.table.horizontalHeader()
@@ -144,7 +145,7 @@ class BookingSystem(BaseWindow):
                     item = QTableWidgetItem(str(value))
                     # 设置状态列的颜色
                     if col_num == 3:  # 状态列
-                        if value == '使用中':
+                        if value == '使用中' or value == '已预订':
                             item.setForeground(Qt.red)
                         else:
                             item.setForeground(Qt.green)
